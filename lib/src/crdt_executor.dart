@@ -72,29 +72,29 @@ class _CrdtTableExecutor {
       CreateTableStatement statement, List<Object?>? args) async {
     final newStatement = CreateTableStatement(
       tableName: statement.tableName,
-      columns: [
-        ...statement.columns,
-        ColumnDefinition(
-          columnName: 'is_deleted',
-          typeName: 'INTEGER',
-          constraints: [Default(null, NumericLiteral(0))],
-        ),
-        ColumnDefinition(
-          columnName: 'hlc',
-          typeName: 'TEXT',
-          constraints: [NotNull(null)],
-        ),
-        ColumnDefinition(
-          columnName: 'node_id',
-          typeName: 'TEXT',
-          constraints: [NotNull(null)],
-        ),
-        ColumnDefinition(
-          columnName: 'modified',
-          typeName: 'TEXT',
-          constraints: [NotNull(null)],
-        ),
-      ],
+      // columns: [
+      //   ...statement.columns,
+      //   ColumnDefinition(
+      //     columnName: 'is_deleted',
+      //     typeName: 'INTEGER',
+      //     constraints: [Default(null, NumericLiteral(0))],
+      //   ),
+      //   ColumnDefinition(
+      //     columnName: 'hlc',
+      //     typeName: 'TEXT',
+      //     constraints: [NotNull(null)],
+      //   ),
+      //   ColumnDefinition(
+      //     columnName: 'node_id',
+      //     typeName: 'TEXT',
+      //     constraints: [NotNull(null)],
+      //   ),
+      //   ColumnDefinition(
+      //     columnName: 'modified',
+      //     typeName: 'TEXT',
+      //     constraints: [NotNull(null)],
+      //   ),
+      // ],
       tableConstraints: statement.tableConstraints,
       ifNotExists: statement.ifNotExists,
       isStrict: statement.isStrict,
