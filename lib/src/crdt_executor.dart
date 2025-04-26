@@ -49,8 +49,10 @@ class _CrdtTableExecutor {
     final statements =
         (_sqlEngine.parseMultiple(sql).rootNode as SemicolonSeparatedStatements)
             .statements;
-    assert(statements.length == 1,
-        'This package does not support compound statements:\n$sql');
+    assert(
+      statements.length == 1,
+      'This package does not support compound statements:\n$sql',
+    );
 
     final statement = statements.first;
 
@@ -69,9 +71,12 @@ class _CrdtTableExecutor {
           : _execute(statement, args);
 
   Future<String> _createTable(
-      CreateTableStatement statement, List<Object?>? args) async {
+    CreateTableStatement statement,
+    List<Object?>? args,
+  ) async {
     final newStatement = CreateTableStatement(
       tableName: statement.tableName,
+      columns: statement.columns,
       // columns: [
       //   ...statement.columns,
       //   ColumnDefinition(
@@ -107,9 +112,10 @@ class _CrdtTableExecutor {
   }
 
   Future<String?> _execute(Statement statement, List<Object?>? args) async {
-    final sql = statement is InvalidStatement
-        ? statement.span?.text
-        : statement.toSql();
+    final sql =
+        statement is InvalidStatement
+            ? statement.span?.text
+            : statement.toSql();
     if (sql == null) return null;
 
     await _db.execute(sql, args);
@@ -135,43 +141,51 @@ class CrdtWriteExecutor extends _CrdtTableExecutor {
 
   @override
   Future<void> _executeStatement(
-      Statement statement, List<Object?>? args) async {
+    Statement statement,
+    List<Object?>? args,
+  ) async {
     final table = await switch (statement) {
       CreateTableStatement statement => _createTable(statement, args),
       InsertStatement statement => _insert(statement, args),
       UpdateStatement statement => _update(statement, args),
       DeleteStatement statement => _delete(statement, args),
       // Else, run the query unchanged
-      _ => _execute(statement, args)
+      _ => _execute(statement, args),
     };
     if (table != null) affectedTables.add(table);
   }
 
   Future<String> _insert(InsertStatement statement, List<Object?>? args) async {
     // Force explicit column description in insert statements
-    assert(statement.targetColumns.isNotEmpty,
-        'Unsupported statement: target columns must be explicitly stated.\n${statement.toSql()}');
+    assert(
+      statement.targetColumns.isNotEmpty,
+      'Unsupported statement: target columns must be explicitly stated.\n${statement.toSql()}',
+    );
 
     // Disallow star select statements
     assert(
-        statement.source is! SelectInsertSource ||
-            ((statement.source as SelectInsertSource).stmt as SelectStatement)
-                .columns
-                .whereType<StarResultColumn>()
-                .isEmpty,
-        'Unsupported statement: select columns must be explicitly stated.\n${statement.toSql()}');
+      statement.source is! SelectInsertSource ||
+          ((statement.source as SelectInsertSource).stmt as SelectStatement)
+              .columns
+              .whereType<StarResultColumn>()
+              .isEmpty,
+      'Unsupported statement: select columns must be explicitly stated.\n${statement.toSql()}',
+    );
 
     final argCount = args?.length ?? 0;
     final source = switch (statement.source) {
       ValuesSource s => ValuesSource([
-          Tuple(expressions: [
+        Tuple(
+          expressions: [
             ...s.values.first.expressions,
             NumberedVariable(argCount + 1),
             NumberedVariable(argCount + 2),
             NumberedVariable(argCount + 3),
-          ])
-        ]),
-      SelectInsertSource s => SelectInsertSource(SelectStatement(
+          ],
+        ),
+      ]),
+      SelectInsertSource s => SelectInsertSource(
+        SelectStatement(
           withClause: (s.stmt as SelectStatement).withClause,
           distinct: (s.stmt as SelectStatement).distinct,
           columns: [
@@ -186,9 +200,12 @@ class CrdtWriteExecutor extends _CrdtTableExecutor {
           windowDeclarations: (s.stmt as SelectStatement).windowDeclarations,
           orderBy: (s.stmt as SelectStatement).orderBy,
           limit: (s.stmt as SelectStatement).limit,
-        )),
-      _ => throw UnimplementedError(
-          'Unsupported data source: ${statement.source.runtimeType}, please file an issue in the sql_crdt project.')
+        ),
+      ),
+      _ =>
+        throw UnimplementedError(
+          'Unsupported data source: ${statement.source.runtimeType}, please file an issue in the sql_crdt project.',
+        ),
     };
 
     final newStatement = InsertStatement(
