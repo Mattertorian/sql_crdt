@@ -40,7 +40,7 @@ abstract class SqlCrdt extends Crdt implements CrdtApi {
 
   @override
   Future<List<Map<String, Object?>>> query(String sql, [List<Object?>? args]) =>
-      _db.query(sql, args);
+      _db.query(SqlUtil.transformAutomaticExplicitSql(sql), args);
 
   @override
   Future<void> execute(String sql, [List<Object?>? args]) async {
@@ -63,7 +63,8 @@ abstract class SqlCrdt extends Crdt implements CrdtApi {
   ///   await crdt.execute('SELECT * FROM users');
   /// });
   Future<void> transaction(
-      Future<void> Function(CrdtExecutor txn) action) async {
+    Future<void> Function(CrdtExecutor txn) action,
+  ) async {
     late final CrdtExecutor executor;
     await _db.transaction((txn) async {
       executor = CrdtExecutor(txn, canonicalTime.increment());
@@ -78,8 +79,10 @@ abstract class SqlCrdt extends Crdt implements CrdtApi {
   /// list of column maps.
   ///
   /// See [query].
-  Stream<List<Map<String, Object?>>> watch(String sql,
-      [List<Object?> Function()? args]) {
+  Stream<List<Map<String, Object?>>> watch(
+    String sql, [
+    List<Object?> Function()? args,
+  ]) {
     late final StreamController<List<Map<String, Object?>>> controller;
     controller = StreamController<List<Map<String, Object?>>>(
       onListen: () {
@@ -120,22 +123,23 @@ abstract class SqlCrdt extends Crdt implements CrdtApi {
     } else {
       // Use default changeset queries if none are provided
       customQueries = {
-        for (final table in tables) table: ('SELECT * FROM $table', [])
+        for (final table in tables) table: ('SELECT * FROM $table', []),
       };
     }
 
     return {
       for (final table in tables)
         table: await _db.query(
-            SqlUtil.addChangesetClauses(
-              table,
-              customQueries[table]!.$1,
-              onlyNodeId: onlyNodeId,
-              exceptNodeId: exceptNodeId,
-              modifiedOn: modifiedOn,
-              modifiedAfter: modifiedAfter,
-            ),
-            customQueries[table]!.$2),
+          SqlUtil.addChangesetClauses(
+            table,
+            customQueries[table]!.$1,
+            onlyNodeId: onlyNodeId,
+            exceptNodeId: exceptNodeId,
+            modifiedOn: modifiedOn,
+            modifiedAfter: modifiedAfter,
+          ),
+          customQueries[table]!.$2,
+        ),
     };
   }
 
@@ -148,7 +152,7 @@ abstract class SqlCrdt extends Crdt implements CrdtApi {
 
     // Fetch keys for all affected tables
     final tableKeys = {
-      for (final table in changeset.keys) table: await getTableKeys(table)
+      for (final table in changeset.keys) table: await getTableKeys(table),
     };
 
     // Merge records
@@ -160,21 +164,25 @@ abstract class SqlCrdt extends Crdt implements CrdtApi {
 
         for (final record in records) {
           // Extract node id from the record's hlc
-          record['node_id'] = (record['hlc'] is String
-                  ? (record['hlc'] as String).toHlc
-                  : (record['hlc'] as Hlc))
-              .nodeId;
+          record['node_id'] =
+              (record['hlc'] is String
+                      ? (record['hlc'] as String).toHlc
+                      : (record['hlc'] as Hlc))
+                  .nodeId;
           // Ensure hlc and modified are strings
           record['hlc'] = record['hlc'].toString();
           record['modified'] = hlc.toString();
 
           final columns = record.keys.join(', ');
-          final placeholders =
-              List.generate(record.length, (i) => '?${i + 1}').join(', ');
+          final placeholders = List.generate(
+            record.length,
+            (i) => '?${i + 1}',
+          ).join(', ');
 
           var i = 1;
-          final updateStatement =
-              record.keys.map((e) => '$e = ?${i++}').join(', \n');
+          final updateStatement = record.keys
+              .map((e) => '$e = ?${i++}')
+              .join(', \n');
 
           final sql = '''
             INSERT INTO $table ($columns)
@@ -206,22 +214,22 @@ abstract class SqlCrdt extends Crdt implements CrdtApi {
   Future<void> resetNodeId([String? newNodeId]) async {
     final oldNodeId = canonicalTime.nodeId;
     newNodeId ??= generateNodeId();
-    await _db.executeBatch(
-      (txn) async {
-        for (final table in await getTables()) {
-          await txn.execute(
-            'UPDATE $table SET modified = REPLACE(modified, ?1, ?2)',
-            [oldNodeId, newNodeId],
-          );
-        }
-      },
-    );
+    await _db.executeBatch((txn) async {
+      for (final table in await getTables()) {
+        await txn.execute(
+          'UPDATE $table SET modified = REPLACE(modified, ?1, ?2)',
+          [oldNodeId, newNodeId],
+        );
+      }
+    });
     canonicalTime = canonicalTime.apply(nodeId: newNodeId);
   }
 
   @override
   Future<void> onDatasetChanged(
-      Iterable<String> affectedTables, Hlc hlc) async {
+    Iterable<String> affectedTables,
+    Hlc hlc,
+  ) async {
     super.onDatasetChanged(affectedTables, hlc);
 
     for (final entry in _watches.entries.toList()) {
@@ -236,40 +244,52 @@ abstract class SqlCrdt extends Crdt implements CrdtApi {
   }
 
   @override
-  Future<Hlc> getLastModified(
-          {String? onlyNodeId, String? exceptNodeId}) async =>
+  Future<Hlc> getLastModified({
+    String? onlyNodeId,
+    String? exceptNodeId,
+  }) async =>
       (await _getLastModified(
-          onlyNodeId: onlyNodeId, exceptNodeId: exceptNodeId)) ??
+        onlyNodeId: onlyNodeId,
+        exceptNodeId: exceptNodeId,
+      )) ??
       Hlc.zero(nodeId);
 
-  Future<Hlc?> _getLastModified(
-      {String? onlyNodeId, String? exceptNodeId}) async {
+  Future<Hlc?> _getLastModified({
+    String? onlyNodeId,
+    String? exceptNodeId,
+  }) async {
     assert(onlyNodeId == null || exceptNodeId == null);
 
     final tables = await getTables();
     if (tables.isEmpty) return null;
 
-    final whereStatement = onlyNodeId != null
-        ? 'WHERE node_id = ?1'
-        : exceptNodeId != null
+    final whereStatement =
+        onlyNodeId != null
+            ? 'WHERE node_id = ?1'
+            : exceptNodeId != null
             ? 'WHERE node_id != ?1'
             : '';
-    final tableStatements = tables.map((table) =>
-        'SELECT max(modified) AS modified FROM $table $whereStatement');
-    final result = await _db.query('''
+    final tableStatements = tables.map(
+      (table) => 'SELECT max(modified) AS modified FROM $table $whereStatement',
+    );
+    final result = await _db.query(
+      '''
       SELECT max(modified) AS modified FROM (
         ${tableStatements.join('\nUNION ALL\n')}
       ) all_tables
-    ''', [
-      if (onlyNodeId != null) onlyNodeId,
-      if (exceptNodeId != null) exceptNodeId,
-    ]);
+    ''',
+      [
+        if (onlyNodeId != null) onlyNodeId,
+        if (exceptNodeId != null) exceptNodeId,
+      ],
+    );
     return (result.firstOrNull?['modified'] as String?)?.toHlc;
   }
 
   Future<void> _emitQuery(
-      StreamController<List<Map<String, dynamic>>> controller,
-      _Query query) async {
+    StreamController<List<Map<String, dynamic>>> controller,
+    _Query query,
+  ) async {
     final result = await _db.query(query.sql, query.args?.call());
     if (!controller.isClosed) {
       controller.add(result);

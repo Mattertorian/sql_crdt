@@ -1,3 +1,4 @@
+import 'package:collection/collection.dart';
 import 'package:crdt/crdt.dart';
 import 'package:source_span/source_span.dart';
 import 'package:sqlparser/sqlparser.dart';
@@ -14,7 +15,8 @@ class SqlUtil {
   static Set<String> getAffectedTables(String sql) {
     try {
       return _getAffectedTables(
-          _sqlEngine.parse(sql).rootNode as BaseSelectStatement);
+        _sqlEngine.parse(sql).rootNode as BaseSelectStatement,
+      );
     } catch (_) {
       print('Error parsing statement: $sql');
       rethrow;
@@ -23,8 +25,32 @@ class SqlUtil {
 
   static Set<String> _getAffectedTables(AstNode node) {
     if (node is TableReference) return {node.tableName};
-    return node.allDescendants
-        .fold({}, (prev, e) => prev..addAll(_getAffectedTables(e)));
+    return node.allDescendants.fold(
+      {},
+      (prev, e) => prev..addAll(_getAffectedTables(e)),
+    );
+  }
+
+  /// function takes a SQL [statement]
+  /// transforms the SQL statement to change parameters from automatic
+  /// index into parameters with explicit index
+  static void transformAutomaticExplicit(Statement statement) {
+    statement.allDescendants.whereType<NumberedVariable>().forEachIndexed((
+      i,
+      ref,
+    ) {
+      ref.explicitIndex ??= i + 1;
+    });
+  }
+
+  static String transformAutomaticExplicitSql(String sql) {
+    final statement = _sqlEngine.parse(sql).rootNode as Statement;
+
+    // if statement is of InvalidStatement type, return the original SQL string
+    if (statement is InvalidStatement) return sql;
+
+    transformAutomaticExplicit(statement);
+    return statement.toSql();
   }
 
   static String addChangesetClauses(
@@ -45,31 +71,47 @@ class SqlUtil {
         _createClause(table, 'node_id', TokenType.equal, onlyNodeId),
       if (exceptNodeId != null)
         _createClause(
-            table, 'node_id', TokenType.exclamationEqual, exceptNodeId),
+          table,
+          'node_id',
+          TokenType.exclamationEqual,
+          exceptNodeId,
+        ),
       if (modifiedOn != null)
         _createClause(
-            table, 'modified', TokenType.equal, modifiedOn.toString()),
+          table,
+          'modified',
+          TokenType.equal,
+          modifiedOn.toString(),
+        ),
       if (modifiedAfter != null)
         _createClause(
-            table, 'modified', TokenType.more, modifiedAfter.toString()),
+          table,
+          'modified',
+          TokenType.more,
+          modifiedAfter.toString(),
+        ),
       if (statement.where != null) statement.where!,
     ];
 
     if (clauses.isNotEmpty) {
-      statement.where =
-          clauses.reduce((left, right) => _joinClauses(left, right));
+      statement.where = clauses.reduce(
+        (left, right) => _joinClauses(left, right),
+      );
     }
 
     return statement.toSql();
   }
 
   static BinaryExpression _createClause(
-          String table, String column, TokenType operator, String value) =>
-      BinaryExpression(
-        Reference(columnName: column),
-        Token(operator, _span),
-        StringLiteral(value),
-      );
+    String table,
+    String column,
+    TokenType operator,
+    String value,
+  ) => BinaryExpression(
+    Reference(columnName: column),
+    Token(operator, _span),
+    StringLiteral(value),
+  );
 
   static BinaryExpression _joinClauses(Expression left, Expression right) =>
       BinaryExpression(left, Token(TokenType.and, _span), right);

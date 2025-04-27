@@ -3,6 +3,7 @@ import 'package:sqlparser/sqlparser.dart';
 import 'package:sqlparser/utils/node_to_text.dart';
 
 import 'database_api.dart';
+import 'sql_util.dart';
 
 final _sqlEngine = SqlEngine();
 
@@ -36,7 +37,10 @@ class CrdtTableExecutor extends _CrdtTableExecutor implements CrdtApi {
 
   @override
   Future<List<Map<String, Object?>>> query(String sql, [List<Object?>? args]) =>
-      (_db as ReadWriteApi).query(sql, args);
+      (_db as ReadWriteApi).query(
+        SqlUtil.transformAutomaticExplicitSql(sql),
+        args,
+      );
 }
 
 class _CrdtTableExecutor {
@@ -128,7 +132,10 @@ class CrdtExecutor extends CrdtWriteExecutor implements CrdtApi {
 
   @override
   Future<List<Map<String, Object?>>> query(String sql, [List<Object?>? args]) =>
-      (_db as ReadWriteApi).query(sql, args);
+      (_db as ReadWriteApi).query(
+        SqlUtil.transformAutomaticExplicitSql(sql),
+        args,
+      );
 }
 
 class CrdtWriteExecutor extends _CrdtTableExecutor {
@@ -144,6 +151,7 @@ class CrdtWriteExecutor extends _CrdtTableExecutor {
     Statement statement,
     List<Object?>? args,
   ) async {
+    SqlUtil.transformAutomaticExplicit(statement);
     final table = await switch (statement) {
       CreateTableStatement statement => _createTable(statement, args),
       InsertStatement statement => _insert(statement, args),
